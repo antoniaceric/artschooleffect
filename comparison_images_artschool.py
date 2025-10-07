@@ -1,4 +1,4 @@
-## Compare image properties before and in the first 2 years of artschool ##
+## Compare image properties before and after artschool ##
 
 # %% =========================== CONFIG ===========================
 import os
@@ -241,3 +241,4 @@ if not res.empty:
     print(res.sort_values("p_FDR")[show_cols].head(15).to_string(index=False))
 else:
     print("No comparable numeric metrics found between the two CSVs.")
+
