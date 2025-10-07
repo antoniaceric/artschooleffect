@@ -56,6 +56,9 @@ Results are saved in the configured output folder (`OUT_DIR`):
 ### Background
 This toolkit is part of *The Art School Effect* project, investigating how formal art education shapes the visual and structural properties of artistic production through computational image analysis.
 
+Find more information here:
+    → https://sites.google.com/view/the-art-school-effect/home?authuser=0
+
 ---
 
 ### Contact
