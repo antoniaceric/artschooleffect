@@ -1,5 +1,6 @@
 # ================================================
 # Art School Effect — Portfolio + ICC + Paired/ANOVA + Clustering (PRINTS)
+# [MODIFIED to use the two files from your merge script]
 # ================================================
 # RQ1: Do QIPs change with training?  (paired tests + optional within-subject ANOVA)
 # RQ2: Do change patterns cluster, and are clusters/school differences evident? (clustering + ANOVA/MANOVA)
@@ -45,37 +46,42 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
+# This script can still load defaults from config_img_comparison.py
+# but we will override the file paths below.
 import importlib
 import config_img_comparison as CFG
 importlib.reload(CFG)
 
 np.random.seed(getattr(CFG, "RANDOM_SEED", 42))
-VERBOSE       = getattr(CFG, "VERBOSE", True)
-DPI           = getattr(CFG, "DPI", 200)
-USE_ANOVARM   = getattr(CFG, "USE_ANOVARM", True) and HAVE_ANOVARM
-K_RANGE       = getattr(CFG, "K_RANGE", [2,3,4,5,6])
+VERBOSE         = getattr(CFG, "VERBOSE", True)
+DPI             = getattr(CFG, "DPI", 200)
+USE_ANOVARM     = getattr(CFG, "USE_ANOVARM", True) and HAVE_ANOVARM
+K_RANGE         = getattr(CFG, "K_RANGE", [2,3,4,5,6])
 KMEANS_N_STARTS = getattr(CFG, "KMEANS_N_STARTS", 25)
-TOP_N_MIXED   = getattr(CFG, "TOP_N_MIXED", 12)
+TOP_N_MIXED     = getattr(CFG, "TOP_N_MIXED", 12)
 
-SUBJECT_COL   = getattr(CFG, "SUBJECT_COL", "subject")
-BEFORE_LABEL  = getattr(CFG, "BEFORE_LABEL", "before")
-AFTER_LABEL   = getattr(CFG, "AFTER_LABEL", "after")
+SUBJECT_COL     = getattr(CFG, "SUBJECT_COL", "subject") # This should be "subject" (which your merge script adds)
+BEFORE_LABEL    = getattr(CFG, "BEFORE_LABEL", "before")
+AFTER_LABEL     = getattr(CFG, "AFTER_LABEL", "after")
 
-CSV_BEFORE    = CFG.CSV_BEFORE
-CSV_YEAR2     = CFG.CSV_YEAR2
-OUT_DIR       = CFG.OUT_DIR
+# --- [MODIFIED] Paths now point to the output of your merge script ---
+CSV_BEFORE    = r"C:\Users\anton\Documents\Python\Image_properties\Results\merged\merged_before.csv"
+CSV_YEAR2     = r"C:\Users\anton\Documents\Python\Image_properties\Results\merged\merged_after.csv"
+# ---------------------------------------------------------------------
+
+OUT_DIR         = CFG.OUT_DIR
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Optional metadata
-METADATA_CSV  = getattr(CFG, "METADATA_CSV", None)
-SCHOOL_COL    = getattr(CFG, "SCHOOL_COL", "school")
-YEARS_COL     = getattr(CFG, "YEARS_COL", "years_art_school")
-MEDIUM_COL    = getattr(CFG, "MEDIUM_COL", "medium")
+METADATA_CSV    = getattr(CFG, "METADATA_CSV", None)
+SCHOOL_COL      = getattr(CFG, "SCHOOL_COL", "school")
+YEARS_COL       = getattr(CFG, "YEARS_COL", "years_art_school")
+MEDIUM_COL      = getattr(CFG, "MEDIUM_COL", "medium")
 
 # Exclusions
 DEFAULT_SIZE_PATTERNS = ["size","width","height","pixels","pixel","px","area","dpi","megapixel","mpx"]
 SIZE_PATTERNS = [p.lower() for p in getattr(CFG, "SIZE_PATTERNS", DEFAULT_SIZE_PATTERNS)]
-METRIC_EXCLUDE = getattr(CFG, "METRIC_EXCLUDE", [])
+METRIC_EXCLUDE = getattr(CFG, "METRIC_EXCLUDE", []) + ["Aspect ratio"]
 
 # Visuals
 HEATMAP_MAX_METRICS = getattr(CFG, "HEATMAP_MAX_METRICS", 40)
@@ -131,9 +137,18 @@ def cramers_v(chi2, n, r, c):
     denom = min(r-1, c-1)
     return np.sqrt((chi2 / n) / denom) if denom > 0 else np.nan
 
-# Normalize IDs like 'sub120', '012', '120.0' -> '120' (string)
+# Normalize IDs like 'sub01', '1', '1.0' -> '1' (string)
 def _norm_ids(s: pd.Series) -> pd.Series:
-    return s.astype(str).str.extract(r'(\d+)', expand=False)
+    # Extract the first group of digits
+    digits = s.astype(str).str.extract(r'(\d+)', expand=False)
+
+    # Convert to a standard integer (handles "01" -> 1 and "1" -> 1)
+    # .astype('Int64') supports NaN values (pd.NA)
+    numeric = pd.to_numeric(digits, errors='coerce').astype('Int64')
+
+    # Convert back to a plain string for matching
+    # "1" -> "1", "33" -> "33", pd.NA -> "<NA>"
+    return numeric.astype(str).replace("<NA>", pd.NA)
 
 # ---------- ICC (reliability of portfolio mean) ----------
 def icc1k_unbalanced(df_long, subject_col, value_col):
@@ -162,6 +177,8 @@ def icc1k_unbalanced(df_long, subject_col, value_col):
     return icc1, icc1k, nbar, ms_within
 
 # ---------------- LOAD DATA ----------------
+# This section is identical to your original script, but now
+# CSV_BEFORE and CSV_YEAR2 point to your new merged files.
 log(f"\n[SETUP] Using config: {getattr(CFG, '__file__', '<unknown>')}")
 log(f"[PATH] BEFORE CSV: {CSV_BEFORE}")
 log(f"[PATH] AFTER  CSV: {CSV_YEAR2}")
@@ -183,6 +200,7 @@ before_raw = pd.read_csv(CSV_BEFORE)
 after_raw  = pd.read_csv(CSV_YEAR2)
 log(f"[LOAD] BEFORE rows: {len(before_raw):,} | AFTER rows: {len(after_raw):,}")
 
+# Your merge script adds the "subject" column, so this check should pass.
 if SUBJECT_COL not in before_raw.columns or SUBJECT_COL not in after_raw.columns:
     raise ValueError(f"'{SUBJECT_COL}' column is required in both CSVs.")
 
@@ -333,7 +351,7 @@ if not paired_tbl.empty:
     top = top.sort_values(["Significant_FDR_0.05","p_FDR","abs_eff"], ascending=[False,True,False]).head(min(15, len(top)))
     log("[RQ1] Top changed QIPs (by FDR then |effect|):")
     for _, r in top.iterrows():
-        log(f"  - {r['QIP']}: Δ={r['mean_delta']:.3g}, p={r['p_value']:.3g}, q={r.get('p_FDR',np.nan):.3g}, {r['Effect_name']}={r['Effect']:.3g}")
+        log(f"   - {r['QIP']}: Δ={r['mean_delta']:.3g}, p={r['p_value']:.3g}, q={r.get('p_FDR',np.nan):.3g}, {r['Effect_name']}={r['Effect']:.3g}")
 
 # Optional: Within-subject ANOVA (Time) per QIP
 if USE_ANOVARM:
@@ -500,6 +518,70 @@ else:
             plt.savefig(fp, dpi=DPI); plt.close()
             log(f"[FIG]   Cluster PCA plot -> {fp}")
 
+         
+        log("\n[CLUST] Calculating cluster centroids (mean ΔQIP profile per cluster)")
+        try:
+            # Merge cluster assignments back onto the original delta data
+            delta_with_clusters = delta.reset_index().merge(
+                cluster_assignments, on=SUBJECT_COL, how='inner'
+            )
+
+            # Calculate centroids (mean delta per QIP for each cluster)
+            cluster_centroids = delta_with_clusters.groupby('Cluster')[important_cols].mean().T # Transpose for better readability
+            centroid_path = os.path.join(OUT_DIR, "cluster_centroids_mean_delta.csv")
+            cluster_centroids.to_csv(centroid_path, encoding="utf-8")
+            log(f"[SAVE]  Cluster centroids -> {centroid_path}")
+
+            # Compare centroids using independent t-tests per QIP
+            log("[CLUST] Comparing cluster centroids (independent t-tests per QIP)")
+            ttest_results = []
+            cluster_0_data = delta_with_clusters[delta_with_clusters['Cluster'] == 0]
+            cluster_1_data = delta_with_clusters[delta_with_clusters['Cluster'] == 1]
+
+            # Ensure there are enough subjects in each cluster for t-tests (at least 2)
+            if len(cluster_0_data) >= 2 and len(cluster_1_data) >= 2:
+                for qip in important_cols:
+                    try:
+                        t_stat, p_val = stats.ttest_ind(
+                            cluster_0_data[qip].dropna(),
+                            cluster_1_data[qip].dropna(),
+                            equal_var=False # Welch's t-test (safer for small/unequal N)
+                        )
+                        ttest_results.append({
+                            "QIP": qip,
+                            "t_statistic": t_stat,
+                            "p_value": p_val,
+                            "Mean_Cluster0": cluster_centroids.loc[qip, 0],
+                            "Mean_Cluster1": cluster_centroids.loc[qip, 1]
+                        })
+                    except Exception as e_ttest:
+                        log(f"[warn] T-test failed for {qip}: {e_ttest}")
+                        ttest_results.append({
+                            "QIP": qip, "t_statistic": np.nan, "p_value": np.nan,
+                            "Mean_Cluster0": cluster_centroids.loc[qip, 0],
+                            "Mean_Cluster1": cluster_centroids.loc[qip, 1]
+                        })
+
+                if ttest_results:
+                    ttest_df = pd.DataFrame(ttest_results).sort_values("p_value")
+                    # Optional: Add FDR correction if desired, though likely underpowered
+                    # rej_fdr, p_fdr = fdrcorrection(ttest_df["p_value"].fillna(1.0).values, alpha=0.05, method='indep')
+                    # ttest_df["p_FDR"] = p_fdr
+                    ttest_path = os.path.join(OUT_DIR, "cluster_comparison_ttests.csv")
+                    ttest_df.to_csv(ttest_path, index=False, encoding="utf-8")
+                    log(f"[SAVE]  Cluster comparison t-tests -> {ttest_path}")
+                    # Log top differentiating QIPs (uncorrected p-value)
+                    top_diff = ttest_df.nsmallest(5, 'p_value')
+                    log("[CLUST] Top 5 QIPs differentiating clusters (uncorrected p-value):")
+                    for _, row in top_diff.iterrows():
+                         log(f"  - {row['QIP']}: p={row['p_value']:.3g}, Mean Clu0={row['Mean_Cluster0']:.3g}, Mean Clu1={row['Mean_Cluster1']:.3g}")
+
+            else:
+                log("[CLUST] Skipped t-tests: one or both clusters have fewer than 2 members.")
+
+        except Exception as e_clust_analysis:
+            log(f"[warn] Failed to calculate or compare cluster centroids: {e_clust_analysis}")
+       
 # ---------------- Cluster x School association (normalized ids) ----------------
 if METADATA_CSV and os.path.exists(METADATA_CSV) and 'cluster_labels' in locals():
     try:
@@ -581,7 +663,7 @@ if METADATA_CSV and os.path.exists(METADATA_CSV):
                 aov_tbl["Significant_FDR_0.05"] = rej
                 aov_tbl.to_csv(os.path.join(OUT_DIR, "rq2_anova_delta_by_school.csv"), index=False, encoding="utf-8")
                 log(f"[RQ2-ANOVA] Δ-by-school ANOVAs: QIPs tested={len(aov_tbl)} | FDR-significant={int(aov_tbl['Significant_FDR_0.05'].sum())}")
-                    
+            
 # ---------------- Mixed-effects robustness (patched) ----------------
 log("\n[ROBUSTNESS] Image-level robustness: simple MixedLM (subject random intercept) with fallback to cluster-robust OLS")
 
